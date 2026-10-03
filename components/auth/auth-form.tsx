@@ -1,5 +1,5 @@
 'use client'
-
+import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
@@ -22,6 +22,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const next = params.get('next')
   const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null
   const { login, register } = useStore()
+  const supabase=createClient()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -40,9 +41,52 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     if (password.length < 6) return setError('Password must be at least 6 characters.')
 
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 500))
-    const result = isLogin ? login(email, password) : register(name, email, password)
+     let result
+
+if (isLogin) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+
+  if (error) {
     setLoading(false)
+    return setError(error.message)
+  }
+
+  result = {
+    ok: true,
+    user: {
+      name: data.user.user_metadata?.name || email.split('@')[0],
+      role: 'customer' as const,
+    },
+  }
+} else {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        name,
+      },
+    },
+  })
+
+  if (error) {
+    setLoading(false)
+    return setError(error.message)
+  }
+
+  result = {
+    ok: true,
+    user: {
+      name,
+      role: 'customer' as const,
+    },
+  }
+}
+
+setLoading(false)
     if (!result.ok) return setError(result.error)
 
     toast.success(isLogin ? `Welcome back, ${result.user.name.split(' ')[0]}!` : 'Account created successfully')
