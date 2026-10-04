@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import {
   Heart,
   LayoutDashboard,
@@ -78,10 +79,34 @@ function CountBubble({ count }: { count: number }) {
 
 function AccountMenu() {
   const router = useRouter()
-  const { currentUser, logout } = useStore()
+  const { currentUser: storeUser, logout } = useStore()
+  const [sbUser, setSbUser] = useState<{ name: string; email: string; role: string } | null>(null)
 
-  return (
-    <DropdownMenu>
+  useEffect(() => {
+    const supabase = createClient()
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setSbUser(null); return }
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, role')
+        .eq('id', user.id)
+        .single()
+      setSbUser({
+        name: data?.full_name || user.email?.split('@')[0] || 'User',
+        email: user.email ?? '',
+        role: data?.role ?? 'customer',
+      })
+    }
+    load()
+    const { data: sub } = supabase.auth.onAuthStateChange(() => load())
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  const currentUser = sbUser 
+
+  return(
+      <DropdownMenu>
       <DropdownMenuTrigger
         className="flex size-10 items-center justify-center rounded-xl text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
         aria-label="Account menu"
@@ -106,6 +131,9 @@ function AccountMenu() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => router.push('/profile')}>
+             <User aria-hidden="true" /> My Profile
+             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push('/orders')}>
               <Package aria-hidden="true" /> My Orders
             </DropdownMenuItem>
@@ -119,10 +147,12 @@ function AccountMenu() {
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => {
-                logout()
-                router.push('/')
-              }}
+              onClick={async () => {
+              await createClient().auth.signOut()
+              logout()
+              setSbUser(null)
+              window.location.href = '/'
+            }}
             >
               <LogOut aria-hidden="true" /> Sign out
             </DropdownMenuItem>
